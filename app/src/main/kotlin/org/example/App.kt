@@ -5,9 +5,47 @@ package org.example
 
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient
+import software.amazon.awssdk.enhanced.dynamodb.Key
+import software.amazon.awssdk.enhanced.dynamodb.TableSchema
+import software.amazon.awssdk.enhanced.dynamodb.mapper.StaticAttributeTags.primaryPartitionKey
+import software.amazon.awssdk.enhanced.dynamodb.mapper.StaticAttributeTags.primarySortKey
+import software.amazon.awssdk.enhanced.dynamodb.mapper.StaticTableSchema
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional
 import software.amazon.awssdk.http.apache.ApacheHttpClient
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import java.net.URI
+
+// https://filia-aleks.medium.com/graalvm-aws-lambda-or-solving-java-cold-start-problem-2655eeee98c6
+
+data class Record(
+    var pk: String? = null,
+    var sk: String? = null,
+    var field: String? = null
+) {
+    companion object {
+        val schema: TableSchema<Record> = StaticTableSchema.builder(Record::class.java)
+            .newItemSupplier { Record() }
+            .addAttribute(String::class.java) {
+                it.name("PK")
+                    .getter(Record::pk::get)
+                    .setter(Record::pk::set)
+                    .tags(primaryPartitionKey())
+            }
+            .addAttribute(String::class.java) {
+                it.name("SK")
+                    .getter(Record::sk::get)
+                    .setter(Record::sk::set)
+                    .tags(primarySortKey())
+            }
+            .addAttribute(String::class.java) {
+                it.name("Field")
+                    .getter(Record::field::get)
+                    .setter(Record::field::set)
+            }
+            .build()
+    }
+}
 
 class App {
     private val ddb = DynamoDbClient.builder()
@@ -15,11 +53,34 @@ class App {
         .httpClientBuilder(ApacheHttpClient.builder())
         .build()
 
-    fun getTables(): List<String> = ddb.listTables().tableNames()
+    private val enhanced = DynamoDbEnhancedClient.builder()
+        .dynamoDbClient(ddb)
+        .build()
+
+    private val table = enhanced.table("Demo", Record.schema)
+
+    fun createTable() {
+        table.deleteTable()
+        table.createTable()
+    }
+
+    fun upsert(record: Record) {
+        table.putItem(record)
+    }
+
+    fun query(pk: String): List<Record> {
+        return table.query(
+            QueryConditional.keyEqualTo(
+                Key.builder().partitionValue(pk).build()
+            )
+        ).items().toList()
+    }
 }
 
 val logger: Logger = LoggerFactory.getLogger(App::class.java)
 fun main() {
-    val tables = App().getTables()
-    logger.info("tables (${tables.size}): " + tables.joinToString(","))
+    val app = App()
+    app.createTable()
+    (1..10).forEach { app.upsert(Record("pk$it", "sk$it", "field$it")) }
+    logger.info(app.query("pk2").toString())
 }

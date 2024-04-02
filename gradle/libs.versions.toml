@@ -5,7 +5,7 @@
 aws = "2.25.19"
 
 [libraries]
-aws = {module = "software.amazon.awssdk:dynamodb", version.ref = "aws"}
+aws = {module = "software.amazon.awssdk:dynamodb-enhanced", version.ref = "aws"}
 http = {module = "software.amazon.awssdk:apache-client", version.ref = "aws"}
 
 [plugins]
